@@ -9,11 +9,13 @@ from clinic_localizer.evidence.registry import Repository
 from clinic_localizer.governance.review_cycle import advance_for_outcome, decide
 from clinic_localizer.submission.evidence_package import export_bundle, verify_bundle
 from clinic_localizer.statistics.cohort_guard import derive_context
+from clinic_localizer.governance.analysis_approval import AnalysisApproval
 
 
 class Application:
     def __init__(self, database: str | Path, context: Mapping[str, Any] | None = None):
         self.repository = Repository(database)
+        self.analysis_approval = AnalysisApproval(self.repository)
         self.context = dict(context or {})
 
     def ingest(self, record: DomainRecord) -> DomainRecord:
@@ -57,13 +59,16 @@ class Application:
             raise ContractError("audit chain verification failed")
         manifest = export_bundle(output, final_records, decisions, snapshot, self.repository.event_rows())
         result = {"run_id": run_id, "fixture_hash": fixture_hash, "records": len(final_records),
-                  "decisions": len(decisions), "manifest": manifest, "snapshot": snapshot}
+                  "decisions": len(decisions), "manifest": manifest, "snapshot": snapshot, "analysis_policy": self.context, "analysis_evidence": {r.record_id:r.fingerprint for r in final_records}}
         self.repository.finish_run(run_id, result)
         return result
 
     def inspect(self) -> dict[str, Any]:
         return {"snapshot": self.repository.snapshot(), "records": [record.__dict__ for record in self.repository.list_records()],
                 "decisions": self.repository.decision_rows()}
+
+    def scope_history(self, scope_id: str) -> dict[str, Any]:
+        return self.repository.scope_history(scope_id)
 
 
 def load_fixture(path: str | Path) -> dict[str, Any]:
